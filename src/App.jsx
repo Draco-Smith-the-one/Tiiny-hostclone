@@ -11,13 +11,13 @@ import {
   doc, 
   setDoc, 
   onSnapshot, 
-  deleteDoc, 
-  serverTimestamp 
+  deleteDoc
 } from 'firebase/firestore';
 import { 
   Upload, Cloud, Loader2, Globe, Code, ArrowLeft, Eye, Trash2
 } from 'lucide-react';
 
+// --- YOUR VERIFIED FIREBASE CONFIG ---
 const firebaseConfig = {
   apiKey: "AIzaSyCGgpkwpnVBRRhvfXubN0oXF0ucuEpiGD0",
   authDomain: "my-tiiny-host-d8660.firebaseapp.com",
@@ -30,7 +30,7 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
-const customAppId = 'production-tinyhost-v1';
+const appId = 'tinyhost-v1';
 
 function App() {
   const [user, setUser] = useState(null);
@@ -42,19 +42,34 @@ function App() {
   const [activeSite, setActiveSite] = useState(null);
   const fileInputRef = useRef(null);
 
+  // Auth initialization
   useEffect(() => {
-    signInAnonymously(auth).catch(err => console.error("Auth Error:", err));
+    const initAuth = async () => {
+      try {
+        await signInAnonymously(auth);
+      } catch (err) {
+        console.error("Auth failed:", err);
+      }
+    };
+    initAuth();
     const unsubscribe = onAuthStateChanged(auth, setUser);
     return () => unsubscribe();
   }, []);
 
+  // Data listener
   useEffect(() => {
     if (!user) return;
-    const filesRef = collection(db, 'deployments', customAppId, 'files');
+    // Using the required path structure: /artifacts/{appId}/public/data/{collection}
+    const filesRef = collection(db, 'artifacts', appId, 'public', 'data');
+    
     const unsubscribe = onSnapshot(filesRef, (snapshot) => {
       const filesList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setFiles(filesList.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)));
-    }, (err) => console.error("Firestore Sync Error:", err));
+      // Sort by local timestamp or name
+      setFiles(filesList.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)));
+    }, (err) => {
+      console.error("Firestore Error:", err);
+    });
+    
     return () => unsubscribe();
   }, [user]);
 
@@ -64,33 +79,45 @@ function App() {
   };
 
   const handleFileUpload = async (e) => {
-    const uploadedFiles = e.target.files || e.dataTransfer.files;
-    if (!uploadedFiles.length || !user) return;
+    // Prevent default browser behavior for drag/drop
+    if (e.type === 'drop') {
+      e.preventDefault();
+      setDragActive(false);
+    }
+
+    const uploadedFiles = e.target.files || (e.dataTransfer && e.dataTransfer.files);
+    if (!uploadedFiles || uploadedFiles.length === 0 || !user) return;
+    
     setIsUploading(true);
     try {
-      for (let file of uploadedFiles) {
-        const fileId = crypto.randomUUID();
-        const content = await new Promise((res) => {
+      for (let i = 0; i < uploadedFiles.length; i++) {
+        const file = uploadedFiles[i];
+        const fileId = Math.random().toString(36).substring(2, 15);
+        
+        const content = await new Promise((resolve, reject) => {
           const reader = new FileReader();
-          reader.onload = (ev) => res(ev.target.result);
+          reader.onload = (ev) => resolve(ev.target.result);
+          reader.onerror = (err) => reject(err);
           reader.readAsText(file);
         });
         
-        await setDoc(doc(db, 'deployments', customAppId, 'files', fileId), {
+        const docRef = doc(db, 'artifacts', appId, 'public', 'data', fileId);
+        await setDoc(docRef, {
           name: file.name,
           size: (file.size / 1024).toFixed(1) + ' KB',
           content: content,
-          createdAt: serverTimestamp(),
+          createdAt: new Date().toISOString(),
           ownerId: user.uid
         });
       }
       showNote("Successfully Published!");
     } catch (err) { 
-      console.error(err);
+      console.error("Upload Error:", err);
       showNote("Upload failed"); 
     } finally { 
       setIsUploading(false); 
-      setDragActive(false); 
+      setDragActive(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
 
@@ -112,14 +139,18 @@ function App() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 font-sans p-6">
+    <div className="min-h-screen bg-slate-50 text-slate-900 font-sans p-4 md:p-8">
       <div className="max-w-4xl mx-auto">
-        <nav className="flex items-center justify-between mb-12">
+        <nav className="flex items-center justify-between mb-8 md:mb-12">
           <div className="font-black text-2xl tracking-tighter text-indigo-600 flex items-center gap-2">
-            <Cloud /> TINYHOST
+            <Cloud className="w-8 h-8" /> TINYHOST
           </div>
-          <button onClick={() => fileInputRef.current?.click()} className="bg-indigo-600 text-white px-6 py-2 rounded-xl font-bold shadow-lg shadow-indigo-100 transition-all active:scale-95">
-            Deploy
+          <button 
+            onClick={() => fileInputRef.current?.click()} 
+            disabled={isUploading}
+            className="bg-indigo-600 text-white px-5 py-2 rounded-xl font-bold shadow-lg shadow-indigo-100 transition-all active:scale-95 disabled:opacity-50"
+          >
+            {isUploading ? 'Working...' : 'Deploy'}
           </button>
         </nav>
 
@@ -127,37 +158,65 @@ function App() {
           onClick={() => fileInputRef.current?.click()}
           onDragOver={(e) => { e.preventDefault(); setDragActive(true); }}
           onDragLeave={() => setDragActive(false)}
-          onDrop={(e) => { e.preventDefault(); setDragActive(false); handleFileUpload(e); }}
-          className={`border-4 border-dashed rounded-[2.5rem] p-20 flex flex-col items-center justify-center cursor-pointer transition-all duration-300 ${dragActive ? 'border-indigo-500 bg-indigo-50' : 'border-slate-200 bg-white hover:border-indigo-400 hover:shadow-xl'}`}
+          onDrop={handleFileUpload}
+          className={`border-4 border-dashed rounded-[2rem] md:rounded-[2.5rem] p-10 md:p-20 flex flex-col items-center justify-center cursor-pointer transition-all duration-300 ${dragActive ? 'border-indigo-500 bg-indigo-50' : 'border-slate-200 bg-white hover:border-indigo-400 hover:shadow-xl'}`}
         >
-          <input type="file" ref={fileInputRef} onChange={handleFileUpload} className="hidden" />
-          {isUploading ? <Loader2 className="w-12 h-12 mb-4 animate-spin text-indigo-500" /> : <Upload className="w-12 h-12 mb-4 text-slate-300" />}
-          <p className="text-xl font-bold">{isUploading ? "Uploading..." : "Drag & Drop HTML"}</p>
+          <input 
+            type="file" 
+            ref={fileInputRef} 
+            onChange={handleFileUpload} 
+            className="hidden" 
+            accept=".html,.htm,.txt"
+          />
+          {isUploading ? (
+            <Loader2 className="w-12 h-12 mb-4 animate-spin text-indigo-500" />
+          ) : (
+            <Upload className="w-12 h-12 mb-4 text-slate-300" />
+          )}
+          <p className="text-lg md:text-xl font-bold text-center">
+            {isUploading ? "Uploading your site..." : "Drag & Drop HTML file here"}
+          </p>
+          <p className="text-slate-400 mt-2 text-sm">or click to browse files</p>
         </div>
 
-        <div className="mt-12 space-y-4">
-          <h2 className="text-xs font-black text-slate-400 uppercase tracking-widest px-2">Your Deployments</h2>
+        <div className="mt-12 space-y-4 pb-20">
+          <h2 className="text-xs font-black text-slate-400 uppercase tracking-widest px-2">Your Live Sites</h2>
           {files.map(file => (
-            <div key={file.id} className="bg-white p-5 rounded-3xl border border-slate-100 flex items-center justify-between shadow-sm hover:shadow-md transition-shadow group">
-              <div className="flex items-center gap-4">
-                <div className="bg-indigo-50 p-3 rounded-2xl text-indigo-600 group-hover:bg-indigo-600 group-hover:text-white transition-colors">
+            <div key={file.id} className="bg-white p-4 md:p-5 rounded-2xl md:rounded-3xl border border-slate-100 flex items-center justify-between shadow-sm hover:shadow-md transition-shadow group">
+              <div className="flex items-center gap-3 md:gap-4 overflow-hidden">
+                <div className="bg-indigo-50 p-2 md:p-3 rounded-xl text-indigo-600 shrink-0">
                   <Code size={20} />
                 </div>
-                <span className="font-bold">{file.name}</span>
+                <span className="font-bold truncate text-sm md:text-base">{file.name}</span>
               </div>
-              <div className="flex items-center gap-2">
-                <button onClick={() => { setActiveSite(file); setCurrentView('viewer'); }} className="p-2 bg-indigo-50 text-indigo-600 rounded-lg hover:bg-indigo-100 transition-colors"><Eye size={18} /></button>
-                <button onClick={async () => await deleteDoc(doc(db, 'deployments', customAppId, 'files', file.id))} className="p-2 text-slate-300 hover:text-red-500 transition-colors"><Trash2 size={18} /></button>
+              <div className="flex items-center gap-2 shrink-0">
+                <button 
+                  onClick={() => { setActiveSite(file); setCurrentView('viewer'); }} 
+                  className="p-2 bg-indigo-50 text-indigo-600 rounded-lg hover:bg-indigo-100"
+                  title="View Site"
+                >
+                  <Eye size={18} />
+                </button>
+                <button 
+                  onClick={async () => await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', file.id))} 
+                  className="p-2 text-slate-300 hover:text-red-500"
+                  title="Delete Site"
+                >
+                  <Trash2 size={18} />
+                </button>
               </div>
             </div>
           ))}
           {files.length === 0 && !isUploading && (
-            <div className="text-center py-10 text-slate-300 font-medium">No sites deployed yet.</div>
+            <div className="text-center py-10 text-slate-300 font-medium bg-white rounded-3xl border border-dashed border-slate-200">
+              No sites deployed yet.
+            </div>
           )}
         </div>
       </div>
+      
       {notification && (
-        <div className="fixed bottom-10 left-1/2 -translate-x-1/2 bg-slate-900 text-white px-8 py-3 rounded-full font-bold shadow-2xl">
+        <div className="fixed bottom-10 left-1/2 -translate-x-1/2 bg-slate-900 text-white px-8 py-3 rounded-full font-bold shadow-2xl z-[10000]">
           {notification}
         </div>
       )}
@@ -167,5 +226,4 @@ function App() {
 
 export default App;
 
-        
-              
+  
