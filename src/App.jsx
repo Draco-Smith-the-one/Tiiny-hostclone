@@ -18,7 +18,6 @@ import {
   Upload, Cloud, Loader2, Globe, Code, ArrowLeft, Eye, Trash2
 } from 'lucide-react';
 
-// --- YOUR UNIQUE FIREBASE CONFIG ---
 const firebaseConfig = {
   apiKey: "AIzaSyCGgpkwpnVBRRhvfXubN0oXF0ucuEpiGD0",
   authDomain: "my-tiiny-host-d8660.firebaseapp.com",
@@ -28,13 +27,12 @@ const firebaseConfig = {
   appId: "1:985363120155:web:ff836fc7c9ba0b5f50f8be"
 };
 
-// Initialize Firebase
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 const customAppId = 'production-tinyhost-v1';
 
-export default function App() {
+function App() {
   const [user, setUser] = useState(null);
   const [files, setFiles] = useState([]);
   const [isUploading, setIsUploading] = useState(false);
@@ -159,7 +157,7 @@ export default function App() {
         </div>
       </div>
       {notification && (
-        <div className="fixed bottom-10 left-1/2 -translate-x-1/2 bg-slate-900 text-white px-8 py-3 rounded-full font-bold shadow-2xl animate-in slide-in-from-bottom-5">
+        <div className="fixed bottom-10 left-1/2 -translate-x-1/2 bg-slate-900 text-white px-8 py-3 rounded-full font-bold shadow-2xl">
           {notification}
         </div>
       )}
@@ -167,4 +165,7 @@ export default function App() {
   );
 }
 
-  export default App;
+export default App;
+
+        
+              
