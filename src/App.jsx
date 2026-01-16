@@ -3,7 +3,6 @@ import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import { getFirestore, collection, doc, setDoc, onSnapshot, deleteDoc } from 'firebase/firestore';
 
-// --- FIREBASE CONFIG ---
 const firebaseConfig = {
   apiKey: "AIzaSyCGgpkwpnVBRRhvfXubN0oXF0ucuEpiGD0",
   authDomain: "my-tiiny-host-d8660.firebaseapp.com",
@@ -13,47 +12,49 @@ const firebaseConfig = {
   appId: "1:985363120155:web:ff836fc7c9ba0b5f50f8be"
 };
 
-const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
-const auth = getAuth(app);
-const db = getFirestore(app);
-const appId = 'tinyhost-v1';
-
-// --- SIMPLE SVG ICONS (No external library needed) ---
-const IconCloud = () => <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.5 19c2.5 0 4.5-2 4.5-4.5 0-2.3-1.7-4.2-4-4.5-.5-3.7-3.7-6.5-7.5-6.5-3.5 0-6.5 2.5-7.3 5.8C1.2 10.1 0 12.1 0 14.5 0 17 2 19 4.5 19h13z"/></svg>;
-const IconUpload = () => <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>;
-const IconEye = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>;
-const IconTrash = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>;
-
 export default function App() {
   const [user, setUser] = useState(null);
   const [files, setFiles] = useState([]);
+  const [errorLog, setErrorLog] = useState(null); // Mobile error logger
   const [isUploading, setIsUploading] = useState(false);
-  const [dragActive, setDragActive] = useState(false);
   const [viewingFile, setViewingFile] = useState(null);
   const fileInputRef = useRef(null);
 
+  // Initialize Firebase inside a try-catch to catch mobile crashes
+  let db, auth;
+  try {
+    const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
+    auth = getAuth(app);
+    db = getFirestore(app);
+  } catch (e) {
+    if (!errorLog) setErrorLog("Firebase Init Failed: " + e.message);
+  }
+
   useEffect(() => {
+    if (!auth) return;
     const unsubscribe = onAuthStateChanged(auth, (u) => {
       if (u) setUser(u);
-      else signInAnonymously(auth).catch(console.error);
+      else signInAnonymously(auth).catch(e => setErrorLog("Auth Error: " + e.message));
     });
     return () => unsubscribe();
   }, []);
 
   useEffect(() => {
-    if (!user) return;
-    const filesRef = collection(db, 'artifacts', appId, 'public', 'data');
-    return onSnapshot(filesRef, (snap) => {
-      const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      setFiles(list.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0)));
-    }, (err) => console.error("DB Error:", err));
+    if (!user || !db) return;
+    try {
+      const filesRef = collection(db, 'artifacts', 'tinyhost-v1', 'public', 'data');
+      return onSnapshot(filesRef, (snap) => {
+        const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        setFiles(list.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0)));
+      }, (e) => setErrorLog("Database Sync Error: " + e.message));
+    } catch (e) {
+      setErrorLog("Effect Error: " + e.message);
+    }
   }, [user]);
 
   const handleUpload = async (e) => {
-    if (e.type === 'drop') e.preventDefault();
-    const targetFiles = e.target.files || (e.dataTransfer && e.dataTransfer.files);
+    const targetFiles = e.target.files;
     if (!targetFiles?.length || !user) return;
-
     setIsUploading(true);
     try {
       for (let file of targetFiles) {
@@ -63,7 +64,7 @@ export default function App() {
           reader.readAsText(file);
         });
         const id = Math.random().toString(36).substring(7);
-        await setDoc(doc(db, 'artifacts', appId, 'public', 'data', id), {
+        await setDoc(doc(db, 'artifacts', 'tinyhost-v1', 'public', 'data', id), {
           name: file.name,
           content: content,
           createdAt: new Date().toISOString(),
@@ -71,77 +72,70 @@ export default function App() {
           size: (file.size / 1024).toFixed(1) + ' KB'
         });
       }
-    } catch (err) {
-      console.error("Upload failed", err);
-    } finally {
-      setIsUploading(false);
-      setDragActive(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
-    }
+    } catch (e) { setErrorLog("Upload Error: " + e.message); }
+    setIsUploading(false);
   };
 
-  if (viewingFile) {
+  // --- UI RENDER ---
+
+  // 1. If there's an error, show it in Red
+  if (errorLog) {
     return (
-      <div className="fixed inset-0 bg-white flex flex-col z-[100]">
-        <div className="h-12 bg-black text-white flex items-center justify-between px-4">
-          <button onClick={() => setViewingFile(null)} className="text-[10px] font-bold uppercase tracking-widest">← Back</button>
-          <div className="text-[10px] font-mono opacity-50">{viewingFile.name}</div>
-          <div className="text-green-400 text-[10px] font-bold">LIVE</div>
-        </div>
-        <iframe srcDoc={viewingFile.content} className="flex-1 w-full border-none" title="preview" />
+      <div style={{ padding: '20px', color: 'red', fontFamily: 'monospace', background: '#fff5f5', minHeight: '100vh' }}>
+        <h1 style={{ fontSize: '20px' }}>⚠️ Mobile Debugger</h1>
+        <p style={{ background: '#000', color: '#0f0', padding: '10px', borderRadius: '5px' }}>{errorLog}</p>
+        <button onClick={() => window.location.reload()} style={{ padding: '10px', width: '100%' }}>Reload Page</button>
       </div>
     );
   }
 
+  // 2. Viewing a site
+  if (viewingFile) {
+    return (
+      <div style={{ position: 'fixed', inset: 0, background: 'white', zIndex: 100, display: 'flex', flexDirection: 'column' }}>
+        <div style={{ background: '#000', color: '#fff', padding: '15px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <button onClick={() => setViewingFile(null)} style={{ color: '#fff', background: '#333', border: 'none', padding: '8px 15px', borderRadius: '5px' }}>Back</button>
+          <span style={{ fontSize: '12px' }}>{viewingFile.name}</span>
+        </div>
+        <iframe srcDoc={viewingFile.content} style={{ flex: 1, border: 'none' }} />
+      </div>
+    );
+  }
+
+  // 3. Main Dashboard
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 font-sans p-6">
-      <div className="max-w-2xl mx-auto">
-        <header className="flex justify-between items-center mb-12">
-          <div className="text-xl font-black text-indigo-600 flex items-center gap-2 italic">
-            <IconCloud /> TIINY
-          </div>
-          <div className="text-[9px] font-mono text-slate-400 bg-white px-3 py-1 rounded-full border border-slate-200">
-            AUTH: {user ? 'ACTIVE' : 'CONNECTING...'}
-          </div>
-        </header>
+    <div style={{ padding: '20px', fontFamily: '-apple-system, sans-serif', maxWidth: '500px', margin: '0 auto', background: '#f8fafc', minHeight: '100vh' }}>
+      <header style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '30px' }}>
+        <b style={{ color: '#4f46e5', fontSize: '24px' }}>TIINY</b>
+        <div style={{ fontSize: '10px', opacity: 0.5 }}>{user ? 'Connected' : 'Connecting...'}</div>
+      </header>
 
-        <div 
-          onClick={() => fileInputRef.current?.click()}
-          onDragOver={(e) => { e.preventDefault(); setDragActive(true); }}
-          onDragLeave={() => setDragActive(false)}
-          onDrop={handleUpload}
-          className={`border-2 border-dashed rounded-[2.5rem] p-12 text-center transition-all cursor-pointer ${dragActive ? 'bg-indigo-50 border-indigo-500' : 'bg-white border-slate-200 hover:border-indigo-400 shadow-sm'}`}
-        >
-          <input type="file" ref={fileInputRef} className="hidden" onChange={handleUpload} accept=".html"/>
-          <div className="w-16 h-16 bg-indigo-600 text-white rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-indigo-100">
-            {isUploading ? <div className="animate-spin border-2 border-white border-t-transparent rounded-full w-6 h-6" /> : <IconUpload />}
-          </div>
-          <h2 className="text-xl font-bold mb-1">{isUploading ? 'Deploying...' : 'Deploy a new site'}</h2>
-          <p className="text-slate-400 text-sm italic">Drop HTML file here</p>
-        </div>
+      <div 
+        onClick={() => fileInputRef.current.click()}
+        style={{ background: 'white', border: '3px dashed #e2e8f0', borderRadius: '20px', padding: '40px 20px', textAlign: 'center' }}
+      >
+        <input type="file" ref={fileInputRef} hidden onChange={handleUpload} accept="text/html" />
+        <div style={{ fontSize: '40px', marginBottom: '10px' }}>☁️</div>
+        <h3 style={{ margin: '0 0 5px 0' }}>{isUploading ? "Deploying..." : "Upload HTML"}</h3>
+        <p style={{ margin: 0, fontSize: '14px', color: '#64748b' }}>Tap to select file</p>
+      </div>
 
-        <div className="mt-12 space-y-3">
-          <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-4 px-2">Live Deployments</h3>
-          {files.map(f => (
-            <div key={f.id} className="bg-white border border-slate-100 p-4 rounded-2xl flex items-center justify-between shadow-sm">
-              <div className="flex items-center gap-4">
-                <div className="w-10 h-10 bg-indigo-50 text-indigo-500 rounded-xl flex items-center justify-center">
-                  <span className="text-[10px] font-bold">HTML</span>
-                </div>
-                <div>
-                  <div className="font-bold text-sm truncate max-w-[150px]">{f.name}</div>
-                  <div className="text-[9px] font-black text-indigo-500 uppercase">{f.size} • LIVE</div>
-                </div>
-              </div>
-              <div className="flex gap-2">
-                <button onClick={() => setViewingFile(f)} className="p-2.5 bg-slate-50 text-slate-600 rounded-xl hover:bg-indigo-50 hover:text-indigo-600 transition-colors"><IconEye /></button>
-                <button onClick={() => deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', f.id))} className="p-2.5 text-slate-100 hover:text-red-500 transition-colors"><IconTrash /></button>
-              </div>
+      <div style={{ marginTop: '40px' }}>
+        <h4 style={{ fontSize: '12px', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '1px' }}>Deployments</h4>
+        {files.map(f => (
+          <div key={f.id} style={{ background: 'white', padding: '15px', borderRadius: '15px', marginBottom: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
+            <div style={{ overflow: 'hidden' }}>
+              <div style={{ fontWeight: 'bold', fontSize: '14px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{f.name}</div>
+              <div style={{ fontSize: '10px', color: '#4f46e5' }}>LIVE • {f.size}</div>
             </div>
-          ))}
-          {!files.length && !isUploading && <div className="text-center py-10 text-slate-300 text-sm italic">Empty. Deploy something!</div>}
-        </div>
+            <button onClick={() => setViewingFile(f)} style={{ background: '#4f46e5', color: 'white', border: 'none', borderRadius: '8px', padding: '8px 15px', fontWeight: 'bold' }}>View</button>
+          </div>
+        ))}
+        {!files.length && !isUploading && (
+          <div style={{ textAlign: 'center', padding: '40px', color: '#cbd5e1' }}>No sites yet</div>
+        )}
       </div>
     </div>
   );
-}
+                                           }
+          
