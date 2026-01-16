@@ -1,15 +1,37 @@
+{
+  "name": "tinyhost-clone",
+  "version": "1.0.0",
+  "private": true,
+  "dependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-scripts": "5.0.1",
+    "firebase": "^10.8.0",
+    "lucide-react": "^0.344.0",
+    "web-vitals": "^2.1.4"
+  },
   "scripts": {
     "start": "react-scripts start",
     "build": "CI=false react-scripts build",
     "test": "react-scripts test",
     "eject": "react-scripts eject"
   },
+  "eslintConfig": {
+    "extends": [
+      "react-app"
+    ]
+  },
+  "browserslist": {
+    "production": [
+      ">0.2%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 1 chrome version",
+      "last 1 firefox version",
+      "last 1 safari version"
+    ]
+  }
+}
 
-### What to do if it fails again:
-If it fails after these changes, please scroll down in the Vercel log until you see a line in **Red text** or a line that says **"Failed to compile."** The lines right below that will tell us exactly which line number and which character is the problem.
-
-**Common Culprits to look for in the log:**
-* `Module not found: Can't resolve './App'` (This means the file name is slightly different).
-* `Parsing error: Unexpected token` (This means a bracket `{` or `}` is missing).
-
-**Once you update `src/index.js` to explicitly look for `./App.jsx`, try the build one more time!**
