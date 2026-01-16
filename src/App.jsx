@@ -10,13 +10,12 @@ import {
   collection, 
   doc, 
   setDoc, 
-  getDoc,
   onSnapshot, 
   deleteDoc, 
   serverTimestamp 
 } from 'firebase/firestore';
 import { 
-  Upload, Cloud, Search, Loader2, Globe, Code, Share2, ArrowLeft, Eye, Trash2
+  Upload, Cloud, Loader2, Globe, Code, ArrowLeft, Eye, Trash2
 } from 'lucide-react';
 
 // --- YOUR UNIQUE FIREBASE CONFIG ---
@@ -29,7 +28,7 @@ const firebaseConfig = {
   appId: "1:985363120155:web:ff836fc7c9ba0b5f50f8be"
 };
 
-// Initialize Firebase services
+// Initialize Firebase
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
@@ -40,14 +39,12 @@ export default function App() {
   const [files, setFiles] = useState([]);
   const [isUploading, setIsUploading] = useState(false);
   const [dragActive, setDragActive] = useState(false);
-  const [searchTerm, setSearchTerm] = useState('');
   const [notification, setNotification] = useState(null);
   const [currentView, setCurrentView] = useState('dashboard');
   const [activeSite, setActiveSite] = useState(null);
   const fileInputRef = useRef(null);
 
   useEffect(() => {
-    // Sign in anonymously so the user can save files
     signInAnonymously(auth).catch(err => console.error("Auth Error:", err));
     const unsubscribe = onAuthStateChanged(auth, setUser);
     return () => unsubscribe();
@@ -55,7 +52,6 @@ export default function App() {
 
   useEffect(() => {
     if (!user) return;
-    // Sync the list of uploaded files from Firestore
     const filesRef = collection(db, 'deployments', customAppId, 'files');
     const unsubscribe = onSnapshot(filesRef, (snapshot) => {
       const filesList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -82,7 +78,6 @@ export default function App() {
           reader.readAsText(file);
         });
         
-        // Save the file content directly into Firestore
         await setDoc(doc(db, 'deployments', customAppId, 'files', fileId), {
           name: file.name,
           size: (file.size / 1024).toFixed(1) + ' KB',
@@ -94,7 +89,7 @@ export default function App() {
       showNote("Successfully Published!");
     } catch (err) { 
       console.error(err);
-      showNote("Upload failed - Check Firebase Rules"); 
+      showNote("Upload failed"); 
     } finally { 
       setIsUploading(false); 
       setDragActive(false); 
@@ -138,7 +133,7 @@ export default function App() {
           className={`border-4 border-dashed rounded-[2.5rem] p-20 flex flex-col items-center justify-center cursor-pointer transition-all duration-300 ${dragActive ? 'border-indigo-500 bg-indigo-50' : 'border-slate-200 bg-white hover:border-indigo-400 hover:shadow-xl'}`}
         >
           <input type="file" ref={fileInputRef} onChange={handleFileUpload} className="hidden" />
-          <Upload className={`w-12 h-12 mb-4 ${isUploading ? 'animate-bounce text-indigo-400' : 'text-slate-300'}`} />
+          {isUploading ? <Loader2 className="w-12 h-12 mb-4 animate-spin text-indigo-500" /> : <Upload className="w-12 h-12 mb-4 text-slate-300" />}
           <p className="text-xl font-bold">{isUploading ? "Uploading..." : "Drag & Drop HTML"}</p>
         </div>
 
@@ -171,4 +166,5 @@ export default function App() {
     </div>
   );
 }
-export default App;
+
+  export default App;
