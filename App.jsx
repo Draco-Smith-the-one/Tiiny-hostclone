@@ -3,7 +3,6 @@ import { initializeApp } from 'firebase/app';
 import { 
   getAuth, 
   signInAnonymously, 
-  signInWithCustomToken, 
   onAuthStateChanged 
 } from 'firebase/auth';
 import { 
@@ -17,15 +16,25 @@ import {
   serverTimestamp 
 } from 'firebase/firestore';
 import { 
-  Upload, Cloud, CheckCircle, Search, Loader2, Globe, Code, Share2, ArrowLeft, Eye, Trash2, X
+  Upload, Cloud, Search, Loader2, Globe, Code, Share2, ArrowLeft, Eye, Trash2
 } from 'lucide-react';
 
-// --- Firebase Configuration ---
-const firebaseConfig = JSON.parse(__firebase_config);
+// --- CONFIGURATION ---
+// Replace the empty strings below with your actual Firebase keys 
+// found in your Firebase Console (Project Settings > General)
+const firebaseConfig = {
+  apiKey: "YOUR_API_KEY",
+  authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
+  projectId: "YOUR_PROJECT_ID",
+  storageBucket: "YOUR_PROJECT_ID.appspot.com",
+  messagingSenderId: "YOUR_ID",
+  appId: "YOUR_APP_ID"
+};
+
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'tinyhost-sim-v5';
+const customAppId = 'production-tinyhost-v1';
 
 export default function App() {
   const [user, setUser] = useState(null);
@@ -34,31 +43,20 @@ export default function App() {
   const [dragActive, setDragActive] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [notification, setNotification] = useState(null);
-  
-  // VIRTUAL ROUTING STATE (Prevents 404s)
-  const [currentView, setCurrentView] = useState('dashboard'); // 'dashboard' or 'viewer'
+  const [currentView, setCurrentView] = useState('dashboard');
   const [activeSite, setActiveSite] = useState(null);
-  
   const fileInputRef = useRef(null);
 
-  // --- Auth Logic ---
   useEffect(() => {
-    const initAuth = async () => {
-      if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-        await signInWithCustomToken(auth, __initial_auth_token);
-      } else {
-        await signInAnonymously(auth);
-      }
-    };
-    initAuth();
+    // Standard Anonymous Auth for Production
+    signInAnonymously(auth).catch(console.error);
     const unsubscribe = onAuthStateChanged(auth, setUser);
     return () => unsubscribe();
   }, []);
 
-  // --- Real-time Sync ---
   useEffect(() => {
     if (!user) return;
-    const filesRef = collection(db, 'artifacts', appId, 'public', 'data', 'hosted_files');
+    const filesRef = collection(db, 'deployments', customAppId, 'files');
     const unsubscribe = onSnapshot(filesRef, (snapshot) => {
       const filesList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setFiles(filesList.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)));
@@ -84,7 +82,7 @@ export default function App() {
           reader.readAsText(file);
         });
         
-        await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'hosted_files', fileId), {
+        await setDoc(doc(db, 'deployments', customAppId, 'files', fileId), {
           name: file.name,
           size: (file.size / 1024).toFixed(1) + ' KB',
           content: content,
@@ -92,111 +90,68 @@ export default function App() {
           ownerId: user.uid
         });
       }
-      showNote("Site Deployed Locally!");
+      showNote("Successfully Published!");
     } catch (err) { showNote("Upload failed"); }
     finally { setIsUploading(false); setDragActive(false); }
   };
 
-  const openPreview = (file) => {
-    setActiveSite(file);
-    setCurrentView('viewer');
-  };
-
-  // --- VIEW: THE HOSTED SITE ---
   if (currentView === 'viewer' && activeSite) {
     return (
       <div className="fixed inset-0 bg-white flex flex-col z-[9999]">
         <div className="h-12 bg-slate-900 text-white flex items-center justify-between px-4">
-          <div className="flex items-center gap-4">
-            <button onClick={() => setCurrentView('dashboard')} className="text-xs font-bold flex items-center gap-1 hover:text-indigo-400">
-              <ArrowLeft className="w-3 h-3" /> EXIT PREVIEW
-            </button>
-            <span className="text-[10px] opacity-30">|</span>
-            <span className="text-xs font-mono">{activeSite.name}</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="text-[10px] font-black text-green-400">LIVE SIMULATION</span>
-            <Globe className="w-3 h-3 text-green-400 animate-pulse" />
+          <button onClick={() => setCurrentView('dashboard')} className="text-xs font-bold flex items-center gap-2">
+            <ArrowLeft className="w-4 h-4" /> DASHBOARD
+          </button>
+          <span className="text-xs font-mono opacity-50">{activeSite.name}</span>
+          <div className="flex items-center gap-2 text-green-400 text-[10px] font-bold uppercase">
+            <Globe className="w-3 h-3 animate-pulse" /> Live
           </div>
         </div>
-        <iframe 
-          title="Hosted Page" 
-          srcDoc={activeSite.content} 
-          className="flex-1 w-full border-none"
-          sandbox="allow-scripts allow-forms"
-        />
+        <iframe title="Preview" srcDoc={activeSite.content} className="flex-1 w-full border-none" />
       </div>
     );
   }
 
-  // --- VIEW: THE DASHBOARD ---
   return (
-    <div className="min-h-screen bg-[#fcfdfe] text-slate-900 font-sans">
-      <nav className="h-16 bg-white border-b px-6 flex items-center justify-between sticky top-0 z-50">
-        <div className="flex items-center gap-2 font-black text-xl italic text-indigo-600">
-          <Cloud className="w-6 h-6" /> TINYHOST.
-        </div>
-        <button 
-          onClick={() => fileInputRef.current?.click()} 
-          className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2 rounded-xl text-sm font-bold shadow-lg shadow-indigo-100"
-        >
-          Deploy
-        </button>
-      </nav>
-
-      <main className="max-w-4xl mx-auto py-12 px-6">
-        <div className="mb-10">
-          <h1 className="text-4xl font-black mb-2 tracking-tight">Deploy your static site.</h1>
-          <p className="text-slate-500">Files are stored in the cloud. Testing links works inside this window.</p>
-        </div>
+    <div className="min-h-screen bg-slate-50 text-slate-900 font-sans p-6">
+      <div className="max-w-4xl mx-auto">
+        <nav className="flex items-center justify-between mb-12">
+          <div className="font-black text-2xl tracking-tighter text-indigo-600 flex items-center gap-2">
+            <Cloud /> TINYHOST
+          </div>
+          <button onClick={() => fileInputRef.current?.click()} className="bg-indigo-600 text-white px-6 py-2 rounded-xl font-bold shadow-lg shadow-indigo-100">Deploy</button>
+        </nav>
 
         <div 
           onClick={() => fileInputRef.current?.click()}
           onDragOver={(e) => { e.preventDefault(); setDragActive(true); }}
           onDragLeave={() => setDragActive(false)}
           onDrop={(e) => { e.preventDefault(); setDragActive(false); handleFileUpload(e); }}
-          className={`border-4 border-dashed rounded-[2.5rem] p-16 flex flex-col items-center justify-center cursor-pointer transition-all ${dragActive ? 'border-indigo-500 bg-indigo-50' : 'border-slate-200 bg-white hover:border-indigo-300'}`}
+          className={`border-4 border-dashed rounded-[2.5rem] p-20 flex flex-col items-center justify-center cursor-pointer transition-all ${dragActive ? 'border-indigo-500 bg-indigo-50' : 'border-slate-200 bg-white hover:border-indigo-400'}`}
         >
           <input type="file" ref={fileInputRef} onChange={handleFileUpload} className="hidden" />
-          <div className="bg-indigo-600 p-5 rounded-3xl text-white shadow-xl mb-6">
-            {isUploading ? <Loader2 className="w-8 h-8 animate-spin" /> : <Upload className="w-8 h-8" />}
-          </div>
-          <p className="text-xl font-bold">Drag & Drop HTML File</p>
+          <Upload className={`w-12 h-12 mb-4 ${isUploading ? 'animate-bounce text-indigo-400' : 'text-slate-300'}`} />
+          <p className="text-xl font-bold">Drag & Drop HTML</p>
         </div>
 
-        <div className="mt-12 space-y-3">
+        <div className="mt-12 space-y-4">
           {files.map(file => (
-            <div key={file.id} className="bg-white p-4 rounded-3xl border border-slate-100 flex items-center justify-between group">
+            <div key={file.id} className="bg-white p-5 rounded-3xl border border-slate-100 flex items-center justify-between shadow-sm">
               <div className="flex items-center gap-4">
-                <div className="bg-indigo-50 p-3 rounded-2xl text-indigo-600"><Code className="w-5 h-5" /></div>
-                <h3 className="font-bold text-slate-800">{file.name}</h3>
+                <Code className="text-indigo-600" />
+                <span className="font-bold">{file.name}</span>
               </div>
               <div className="flex items-center gap-2">
-                <button 
-                  onClick={() => openPreview(file)} 
-                  className="bg-indigo-50 text-indigo-600 font-bold px-4 py-2 rounded-xl text-xs hover:bg-indigo-600 hover:text-white transition-all"
-                >
-                  VIEW SITE
-                </button>
-                <button 
-                  onClick={async () => await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'hosted_files', file.id))}
-                  className="p-3 text-slate-200 hover:text-red-500 transition-all"
-                >
-                  <Trash2 className="w-5 h-5"/>
-                </button>
+                <button onClick={() => { setActiveSite(file); setCurrentView('viewer'); }} className="p-2 bg-indigo-50 text-indigo-600 rounded-lg"><Eye size={18} /></button>
+                <button onClick={async () => await deleteDoc(doc(db, 'deployments', customAppId, 'files', file.id))} className="p-2 text-slate-300 hover:text-red-500"><Trash2 size={18} /></button>
               </div>
             </div>
           ))}
         </div>
-      </main>
-
-      {notification && (
-        <div className="fixed bottom-10 left-1/2 -translate-x-1/2 bg-slate-900 text-white px-8 py-4 rounded-full shadow-2xl font-bold z-[10000]">
-          {notification}
-        </div>
-      )}
+      </div>
+      {notification && <div className="fixed bottom-10 left-1/2 -translate-x-1/2 bg-slate-900 text-white px-8 py-3 rounded-full font-bold shadow-2xl">{notification}</div>}
     </div>
   );
 }
 
-  export default App; // <--- Make sure this line is at the very end
+export default App; // <--- Make sure this line is at the very end
