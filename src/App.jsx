@@ -49,62 +49,15 @@ export default function App() {
       </div>
 
       {url && (
-        <div className="w-full max-w-lg mt-8 bg-emerald-50 border border-emerald-100 rounded-2xl p-6 flex items-start gap-4 animate-in fade-in slide-in-from-bottom-4">
+        <div className="w-full max-w-lg mt-8 bg-emerald-50 border border-emerald-100 rounded-2xl p-6 flex items-start gap-4">
           <div className="p-2 bg-emerald-100 rounded-lg text-emerald-600"><CheckCircle size={24} /></div>
           <div className="flex-1 overflow-hidden">
             <p className="text-emerald-800 font-bold text-sm">Deployment Successful!</p>
             <p className="text-slate-500 text-xs truncate mb-3">{url}</p>
-            <a href={url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 bg-white px-4 py-2 rounded-lg text-sm font-bold border border-slate-200 hover:bg-slate-50 transition-colors">
+            <a href={url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 bg-white px-4 py-2 rounded-lg text-sm font-bold border border-slate-200 hover:bg-slate-50">
               Visit Site <ExternalLink size={14} />
             </a>
           </div>
-        </div>
-      )}
-    </div>
-  );
-}
-import React, { useState } from 'react';
-import { upload } from '@vercel/blob/client';
-import { Upload, CheckCircle, ExternalLink, Loader2 } from 'lucide-react';
-
-export default function App() {
-  const [file, setFile] = useState(null);
-  const [uploading, setUploading] = useState(false);
-  const [url, setUrl] = useState('');
-
-  const handleUpload = async () => {
-    if (!file) return;
-    setUploading(true);
-    try {
-      const newBlob = await upload(file.name, file, {
-        access: 'public',
-        handleUploadUrl: '/api/upload',
-        addRandomSuffix: true, 
-      });
-      setUrl(newBlob.url);
-    } catch (error) {
-      alert("Error: " + error.message);
-    } finally {
-      setUploading(false);
-    }
-  };
-
-  return (
-    <div className="min-h-screen bg-[#f8fafc] flex flex-col items-center justify-center p-6 font-sans text-slate-900">
-      <div className="text-center mb-10">
-        <h1 className="text-4xl font-black tracking-tight text-indigo-600 mb-2">TIINY.CLONE</h1>
-        <p className="text-slate-500 font-medium">Host your static files in seconds.</p>
-      </div>
-      <div className="w-full max-w-lg bg-white rounded-2xl shadow-xl border border-slate-100 p-8 text-center">
-        <input type="file" onChange={(e) => setFile(e.target.files[0])} className="mb-4 block w-full text-sm text-slate-500" />
-        <button onClick={handleUpload} disabled={uploading || !file} className="w-full py-4 bg-indigo-600 text-white rounded-xl font-bold">
-          {uploading ? "Deploying..." : "Launch Now"}
-        </button>
-      </div>
-      {url && (
-        <div className="mt-8 p-6 bg-emerald-50 rounded-2xl text-center">
-          <p className="text-emerald-800 font-bold mb-2">Success!</p>
-          <a href={url} target="_blank" className="text-indigo-600 underline break-all">{url}</a>
         </div>
       )}
     </div>
