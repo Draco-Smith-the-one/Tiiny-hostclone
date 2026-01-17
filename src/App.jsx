@@ -1,191 +1,210 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { initializeApp, getApps, getApp } from 'firebase/app';
-import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, collection, doc, setDoc, onSnapshot, deleteDoc, getDoc } from 'firebase/firestore';
+import { useState, useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
+import { useDropzone } from 'react-dropzone';
+import JSZip from 'jszip';
+import { storage, db, auth } from './firebase';
+import { ref, uploadBytes, getDownloadURL, listAll } from 'firebase/storage';
+import { doc, setDoc, getDoc } from 'firebase/firestore';
+import { v4 as uuidv4 } from 'uuid';
 
-const firebaseConfig = {
-  apiKey: "AIzaSyCGgpkwpnVBRRhvfXubN0oXF0ucuEpiGD0",
-  authDomain: "my-tiiny-host-d8660.firebaseapp.com",
-  projectId: "my-tiiny-host-d8660",
-  storageBucket: "my-tiiny-host-d8660.firebasestorage.app",
-  messagingSenderId: "985363120155",
-  appId: "1:985363120155:web:ff836fc7c9ba0b5f50f8be"
-};
+function App() {
+  const location = useLocation();
+  const [customName, setCustomName] = useState('');
+  const [status, setStatus] = useState('');
+  const [shortUrl, setShortUrl] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [redirecting, setRedirecting] = useState(false);
 
-const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
-const auth = getAuth(app);
-const db = getFirestore(app);
-const appId = 'tinyhost-v1';
-
-export default function App() {
-  const [user, setUser] = useState(null);
-  const [files, setFiles] = useState([]);
-  const [isUploading, setIsUploading] = useState(false);
-  const [viewingFile, setViewingFile] = useState(null);
-  const [status, setStatus] = useState('Initializing...');
-  const fileInputRef = useRef(null);
-
+  // Handle direct access to /:slug (redirect to raw content)
   useEffect(() => {
-    const initApp = async () => {
-      // 1. Check for incoming shared links (?site=ID)
-      const params = new URLSearchParams(window.location.search);
-      const siteId = params.get('site');
+    const slug = location.pathname.slice(1).trim();
+    if (!slug) return; // root path → show uploader
 
-      // 2. Handle Authentication
-      const unsubscribe = onAuthStateChanged(auth, async (u) => {
-        if (u) {
-          setUser(u);
-          setStatus('Ready');
-          if (siteId) loadSharedSite(siteId);
-        } else {
-          try {
-            await signInAnonymously(auth);
-          } catch (e) {
-            setStatus('Auth Error');
+    const loadAndRedirect = async () => {
+      setRedirecting(true);
+      setStatus('Loading site...');
+
+      try {
+        const siteRef = doc(db, "artifacts/tinyhost-v1", slug);
+        const siteSnap = await getDoc(siteRef);
+
+        if (siteSnap.exists()) {
+          const data = siteSnap.data();
+          if (data.rawUrl) {
+            window.location.replace(data.rawUrl);
+          } else {
+            setStatus('Site metadata found but no content URL');
           }
+        } else {
+          setStatus(`No site found for "${slug}"`);
         }
-      });
-      return unsubscribe;
-    };
-    initApp();
-  }, []);
-
-  const loadSharedSite = async (id) => {
-    setStatus('Loading Site...');
-    try {
-      const docRef = doc(db, 'artifacts', appId, 'sites', id);
-      const snap = await getDoc(docRef);
-      if (snap.exists()) {
-        setViewingFile({ id: snap.id, ...snap.data() });
-        setStatus('Live');
-      } else {
-        setStatus('Site Not Found');
+      } catch (err) {
+        console.error(err);
+        setStatus('Error loading site');
+      } finally {
+        setRedirecting(false);
       }
-    } catch (e) {
-      setStatus('Load Error');
+    };
+
+    loadAndRedirect();
+  }, [location.pathname]);
+
+  const onDrop = async (acceptedFiles) => {
+    if (acceptedFiles.length === 0) return;
+    if (!auth.currentUser) {
+      setStatus('Authentication issue – please refresh');
+      return;
+    }
+
+    setLoading(true);
+    setStatus('Uploading files...');
+    setShortUrl('');
+
+    try {
+      const slug = customName.trim()
+        ? customName.replace(/[^a-z0-9-]+/gi, '').toLowerCase()
+        : `s-${uuidv4().slice(0, 6)}`;
+
+      const basePath = `sites/${slug}`;
+
+      let filesToUpload = [];
+
+      for (const file of acceptedFiles) {
+        if (file.name.toLowerCase().endsWith('.zip')) {
+          const zip = new JSZip();
+          const zipContent = await file.arrayBuffer();
+          const zipData = await zip.loadAsync(zipContent);
+
+          zipData.forEach((relativePath, zipEntry) => {
+            if (!zipEntry.dir) {
+              filesToUpload.push({
+                path: relativePath,
+                getBlob: () => zipEntry.async('blob'),
+              });
+            }
+          });
+        } else {
+          filesToUpload.push({
+            path: file.name,
+            blob: file,
+          });
+        }
+      }
+
+      // Upload files to Storage
+      for (const fileObj of filesToUpload) {
+        const blob = fileObj.blob || (await fileObj.getBlob());
+        const fileRef = ref(storage, `\( {basePath}/ \){fileObj.path}`);
+        await uploadBytes(fileRef, blob);
+      }
+
+      // Find main entry point
+      let rawUrl;
+      try {
+        const indexRef = ref(storage, `${basePath}/index.html`);
+        rawUrl = await getDownloadURL(indexRef);
+      } catch {
+        const folderRef = ref(storage, basePath);
+        const { items } = await listAll(folderRef);
+        const htmlFile = items.find((item) => item.name.toLowerCase().endsWith('.html'));
+        if (htmlFile) {
+          rawUrl = await getDownloadURL(htmlFile);
+        }
+      }
+
+      if (!rawUrl) throw new Error('No HTML file found in upload');
+
+      // Save metadata to Firestore
+      await setDoc(doc(db, "artifacts/tinyhost-v1", slug), {
+        slug,
+        storageBase: basePath,
+        mainFile: 'index.html',
+        rawUrl,
+        createdAt: new Date().toISOString(),
+        fileCount: filesToUpload.length,
+        // optional: uploaderUid: auth.currentUser.uid
+      });
+
+      const domain = window.location.origin;
+      const niceUrl = `\( {domain}/ \){slug}`;
+
+      setShortUrl(niceUrl);
+      setStatus('Upload successful! Your site is live at:');
+    } catch (err) {
+      console.error(err);
+      setStatus(`Upload failed: ${err.message || 'Unknown error'}`);
+    } finally {
+      setLoading(false);
     }
   };
 
-  useEffect(() => {
-    if (!user) return;
-    const filesRef = collection(db, 'artifacts', appId, 'sites');
-    return onSnapshot(filesRef, (snap) => {
-      const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      setFiles(list.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0)));
-    }, (e) => setStatus('Sync Error'));
-  }, [user]);
+  const { getRootProps, getInputProps, isDragActive } = useDropzone({
+    onDrop,
+    accept: {
+      'text/html': ['.html', '.htm'],
+      'application/zip': ['.zip'],
+    },
+    multiple: true,
+  });
 
-  const handleUpload = async (e) => {
-    const targetFiles = e.target.files;
-    if (!targetFiles?.length || !user) return;
-    setIsUploading(true);
-    setStatus('Deploying...');
-    try {
-      for (let file of targetFiles) {
-        const content = await new Promise((res) => {
-          const reader = new FileReader();
-          reader.onload = (ev) => res(ev.target.result);
-          reader.readAsText(file);
-        });
-        const fileId = Math.random().toString(36).substring(7);
-        await setDoc(doc(db, 'artifacts', appId, 'sites', fileId), {
-          name: file.name,
-          content: content,
-          createdAt: new Date().toISOString(),
-          ownerId: user.uid,
-          size: (file.size / 1024).toFixed(1) + ' KB'
-        });
-      }
-      setStatus('Success!');
-      setTimeout(() => setStatus('Ready'), 2000);
-    } catch (e) { setStatus('Upload Error'); }
-    setIsUploading(false);
-  };
-
-  const copyLink = (id) => {
-    // Generate clean URL without existing params
-    const baseUrl = window.location.href.split('?')[0];
-    const link = `${baseUrl}?site=${id}`;
-    
-    const textArea = document.createElement("textarea");
-    textArea.value = link;
-    document.body.appendChild(textArea);
-    textArea.select();
-    document.execCommand('copy');
-    document.body.removeChild(textArea);
-    
-    setStatus('Link Copied!');
-    setTimeout(() => setStatus('Ready'), 2000);
-  };
-
-  const closeViewer = () => {
-    setViewingFile(null);
-    window.history.replaceState({}, '', window.location.pathname);
-    setStatus('Ready');
-  };
-
-  if (viewingFile) {
-    return (
-      <div style={{ position: 'fixed', inset: 0, background: 'white', zIndex: 100, display: 'flex', flexDirection: 'column' }}>
-        <div style={{ background: '#0f172a', color: '#fff', padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <button onClick={closeViewer} style={{ color: '#fff', background: '#334155', border: 'none', padding: '8px 16px', borderRadius: '12px', fontSize: '12px', fontWeight: 'bold' }}>✕ Close</button>
-          <span style={{ fontSize: '11px', fontWeight: '600', opacity: 0.8, maxWidth: '150px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{viewingFile.name}</span>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <span style={{ width: '8px', height: '8px', background: '#22c55e', borderRadius: '50%' }}></span>
-            <span style={{ color: '#22c55e', fontSize: '10px', fontWeight: '900', letterSpacing: '0.5px' }}>LIVE</span>
-          </div>
-        </div>
-        <iframe srcDoc={viewingFile.content} style={{ flex: 1, border: 'none', width: '100%' }} title="preview" sandbox="allow-scripts allow-forms" />
-      </div>
-    );
+  if (redirecting) {
+    return <div className="min-h-screen flex items-center justify-center">Redirecting...</div>;
   }
 
   return (
-    <div style={{ padding: '24px', fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif', maxWidth: '500px', margin: '0 auto', background: '#f8fafc', minHeight: '100vh' }}>
-      <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <div style={{ width: '32px', height: '32px', background: '#4f46e5', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 'bold' }}>T</div>
-          <h1 style={{ color: '#1e293b', margin: 0, fontSize: '20px', fontWeight: '900', letterSpacing: '-0.5px' }}>TIINY HOST</h1>
-        </div>
-        <div style={{ fontSize: '10px', background: '#fff', padding: '6px 14px', borderRadius: '20px', border: '1px solid #e2e8f0', color: '#64748b', fontWeight: 'bold', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>
-          {status.toUpperCase()}
-        </div>
-      </header>
+    <div className="min-h-screen bg-gradient-to-br from-purple-50 to-indigo-50 flex flex-col items-center justify-center p-6">
+      <div className="w-full max-w-xl bg-white rounded-2xl shadow-xl p-8">
+        <h1 className="text-4xl font-bold text-center text-indigo-700 mb-2">Tiiny Host Clone</h1>
+        <p className="text-center text-gray-600 mb-8">Upload HTML or ZIP → get shareable link</p>
 
-      <div onClick={() => fileInputRef.current.click()} style={{ background: 'white', border: '2px dashed #cbd5e1', borderRadius: '28px', padding: '48px 20px', textAlign: 'center', cursor: 'pointer', transition: 'all 0.2s' }}>
-        <input type="file" ref={fileInputRef} hidden onChange={handleUpload} accept=".html" />
-        <div style={{ fontSize: '48px', marginBottom: '16px' }}>{isUploading ? '⚙️' : '☁️'}</div>
-        <h3 style={{ margin: '0 0 6px 0', fontSize: '18px', fontWeight: '800', color: '#1e293b' }}>{isUploading ? 'Publishing...' : 'Upload Manga Page'}</h3>
-        <p style={{ margin: 0, fontSize: '13px', color: '#94a3b8', fontWeight: '500' }}>Drop your .html file to go live</p>
-      </div>
+        <input
+          type="text"
+          value={customName}
+          onChange={(e) => setCustomName(e.target.value)}
+          placeholder="Custom name (optional, letters/numbers/hyphens)"
+          className="w-full p-3 mb-6 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+        />
 
-      <div style={{ marginTop: '40px' }}>
-        <div style={{ fontSize: '11px', color: '#94a3b8', fontWeight: '900', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '16px', display: 'flex', justifyContent: 'space-between' }}>
-          <span>Active Sites</span>
-          <span>{files.length}</span>
+        <div
+          {...getRootProps()}
+          className={`border-4 border-dashed rounded-2xl p-12 text-center cursor-pointer transition ${
+            isDragActive ? 'border-indigo-600 bg-indigo-50' : 'border-gray-400 hover:border-indigo-500'
+          }`}
+        >
+          <input {...getInputProps()} />
+          <p className="text-xl font-medium">
+            {isDragActive ? 'Drop here now' : 'Drag & drop .html or .zip here'}
+          </p>
+          <p className="text-sm text-gray-500 mt-3">or click to select files</p>
         </div>
-        
-        {files.map(f => (
-          <div key={f.id} style={{ background: 'white', padding: '16px', borderRadius: '20px', marginBottom: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', border: '1px solid #f1f5f9', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
-            <div style={{ overflow: 'hidden', flex: 1, marginRight: '12px' }}>
-              <div style={{ fontWeight: '700', fontSize: '14px', color: '#1e293b', marginBottom: '2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{f.name}</div>
-              <div style={{ fontSize: '10px', color: '#4f46e5', fontWeight: '800' }}>{f.size} • PUBLIC</div>
-            </div>
-            <div style={{ display: 'flex', gap: '8px' }}>
-              <button onClick={() => setViewingFile(f)} style={{ background: '#4f46e5', color: '#fff', border: 'none', borderRadius: '12px', padding: '10px 16px', fontSize: '12px', fontWeight: 'bold' }}>View</button>
-              <button onClick={() => copyLink(f.id)} style={{ background: '#f1f5f9', color: '#64748b', border: 'none', borderRadius: '12px', padding: '10px', fontSize: '14px' }}>🔗</button>
-              <button onClick={() => deleteDoc(doc(db, 'artifacts', appId, 'sites', f.id))} style={{ color: '#fca5a5', background: 'none', border: 'none', padding: '5px' }}>✕</button>
-            </div>
-          </div>
-        ))}
 
-        {!files.length && !isUploading && (
-          <div style={{ textAlign: 'center', padding: '60px 20px', color: '#cbd5e1' }}>
-            <div style={{ fontSize: '32px', marginBottom: '12px' }}>📂</div>
-            <p style={{ fontSize: '14px', fontWeight: '500' }}>No deployments yet</p>
+        {loading && <p className="text-center mt-6 text-indigo-600 font-medium">Uploading... Please wait</p>}
+
+        {status && (
+          <p className={`text-center mt-6 font-medium ${status.includes('successful') ? 'text-green-600' : 'text-red-600'}`}>
+            {status}
+          </p>
+        )}
+
+        {shortUrl && (
+          <div className="mt-8 p-6 bg-green-50 border border-green-200 rounded-xl">
+            <p className="font-semibold text-green-800 mb-3">Your site is ready:</p>
+            <a
+              href={shortUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-indigo-700 underline break-all hover:text-indigo-900 block text-lg"
+            >
+              {shortUrl}
+            </a>
+            <p className="text-sm text-gray-600 mt-4">
+              Anyone visiting this link will see your uploaded content directly (raw HTML).
+            </p>
           </div>
         )}
       </div>
     </div>
   );
 }
+
+export default App;
