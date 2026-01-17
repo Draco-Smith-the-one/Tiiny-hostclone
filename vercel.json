@@ -1,7 +1,6 @@
 {
   "version": 2,
-  "public": true,
-  "cleanUrls": true,
+  "framework": "vite",
   "outputDirectory": "dist",
   "rewrites": [
     {
