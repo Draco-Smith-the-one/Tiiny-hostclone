@@ -11,68 +11,102 @@ function App() {
   };
 
   const handleUpload = async () => {
-    if (!file) {
-      alert("Please select a file first!");
-      return;
-    }
-
+    if (!file) return;
     setUploading(true);
 
     try {
-      // Direct upload to Vercel Blob via our secure api route
       const newBlob = await upload(file.name, file, {
         access: 'public',
         handleUploadUrl: '/api/upload',
+        addRandomSuffix: true, // Fix: Ensures unique URLs for every upload
+        contentType: file.type || 'text/html', // Fix: Forces browser to view, not download
       });
 
       setDownloadUrl(newBlob.url);
-      alert("Upload Successful!");
     } catch (error) {
-      console.error("Upload error:", error);
       alert("Upload failed: " + error.message);
     } finally {
       setUploading(false);
     }
   };
 
+  const copyToClipboard = () => {
+    navigator.clipboard.writeText(downloadUrl);
+    alert("Link copied to clipboard!");
+  };
+
   return (
-    <div style={{ padding: '40px', fontFamily: 'sans-serif', textAlign: 'center' }}>
-      <h1>Tiiny Host Clone</h1>
-      <p>Upload HTML, Images, or ZIP files instantly</p>
-      
-      <div style={{ margin: '20px 0', border: '2px dashed #ccc', padding: '20px' }}>
-        <input 
-          type="file" 
-          onChange={handleFileChange} 
-          disabled={uploading}
-        />
-        <br /><br />
+    <div style={styles.container}>
+      <div style={styles.card}>
+        <h1 style={styles.title}>TIINY CLONE</h1>
+        <p style={styles.subtitle}>The simplest way to host your {file?.name || 'files'}</p>
+        
+        <div style={styles.dropzone}>
+          <input 
+            type="file" 
+            onChange={handleFileChange} 
+            style={styles.fileInput} 
+            id="file-upload"
+          />
+          <label htmlFor="file-upload" style={styles.label}>
+            {file ? `Selected: ${file.name}` : 'Click to select .html or .zip'}
+          </label>
+        </div>
+
         <button 
           onClick={handleUpload} 
           disabled={uploading || !file}
-          style={{
-            padding: '10px 20px',
-            backgroundColor: uploading ? '#ccc' : '#007bff',
-            color: 'white',
-            border: 'none',
-            borderRadius: '5px',
-            cursor: 'pointer'
-          }}
+          style={{...styles.button, backgroundColor: uploading ? '#a29bfe' : '#6c5ce7'}}
         >
           {uploading ? 'Uploading...' : 'Deploy Now'}
         </button>
-      </div>
 
-      {downloadUrl && (
-        <div style={{ marginTop: '20px', padding: '10px', backgroundColor: '#e9ecef' }}>
-          <p>🎉 Your site is live at:</p>
-          <a href={downloadUrl} target="_blank" rel="noreferrer" style={{ wordBreak: 'break-all' }}>
-            {downloadUrl}
-          </a>
-        </div>
-      )}
+        {downloadUrl && (
+          <div style={styles.resultCard}>
+            <p style={styles.successText}>🚀 Your site is live!</p>
+            <div style={styles.linkRow}>
+              <input readOnly value={downloadUrl} style={styles.linkInput} />
+              <button onClick={copyToClipboard} style={styles.copyButton}>Copy</button>
+            </div>
+            <a href={downloadUrl} target="_blank" rel="noreferrer" style={styles.visitLink}>
+              Visit Website →
+            </a>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
+
+const styles = {
+  container: {
+    display: 'flex', justifyContent: 'center', alignItems: 'center', 
+    minHeight: '100vh', backgroundColor: '#f0f2f5', fontFamily: 'sans-serif', padding: '20px'
+  },
+  card: {
+    backgroundColor: 'white', padding: '40px', borderRadius: '16px',
+    boxShadow: '0 10px 25px rgba(0,0,0,0.1)', maxWidth: '400px', width: '100%', textAlign: 'center'
+  },
+  title: { color: '#6c5ce7', fontSize: '28px', marginBottom: '8px', fontWeight: 'bold' },
+  subtitle: { color: '#636e72', marginBottom: '30px' },
+  dropzone: {
+    border: '2px dashed #dfe6e9', borderRadius: '12px', padding: '30px',
+    marginBottom: '20px', position: 'relative', cursor: 'pointer'
+  },
+  fileInput: { position: 'absolute', opacity: 0, width: '100%', height: '100%', top: 0, left: 0, cursor: 'pointer' },
+  label: { color: '#2d3436', fontSize: '14px' },
+  button: {
+    width: '100%', padding: '14px', color: 'white', border: 'none',
+    borderRadius: '8px', fontSize: '16px', fontWeight: 'bold', cursor: 'pointer', transition: '0.3s'
+  },
+  resultCard: {
+    marginTop: '30px', padding: '15px', backgroundColor: '#f8f9fa', borderRadius: '12px', textAlign: 'left'
+  },
+  successText: { color: '#00b894', fontWeight: 'bold', marginBottom: '10px', fontSize: '14px' },
+  linkRow: { display: 'flex', gap: '5px', marginBottom: '10px' },
+  linkInput: { flex: 1, padding: '8px', border: '1px solid #ddd', borderRadius: '4px', fontSize: '12px' },
+  copyButton: { padding: '8px 12px', backgroundColor: '#2d3436', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' },
+  visitLink: { display: 'block', textAlign: 'center', color: '#6c5ce7', textDecoration: 'none', fontWeight: 'bold', fontSize: '14px' }
+};
 
 export default App;
