@@ -7,21 +7,23 @@ export default function App() {
   const [uploading, setUploading] = useState(false);
   const [url, setUrl] = useState('');
 
-  const handleUpload = async () => {
-    if (!file) return;
-    setUploading(true);
-    try {
-      const newBlob = await upload(file.name, file, {
-        access: 'public',
-        handleUploadUrl: '/api/upload',
-      });
-      setUrl(newBlob.url);
-    } catch (error) {
-      alert("Upload Error: " + error.message);
-    } finally {
-      setUploading(false);
-    }
-  };
+const handleUpload = async () => {
+  if (!file) return;
+  setUploading(true);
+  try {
+    const newBlob = await upload(file.name, file, {
+      access: 'public',
+      handleUploadUrl: '/api/upload',
+      addRandomSuffix: true, // Tells the server to add a unique ID to the name
+    });
+    setUrl(newBlob.url);
+  } catch (error) {
+    alert("Error: " + error.message);
+  } finally {
+    setUploading(false);
+  }
+};
+
 
   return (
     <div className="min-h-screen bg-[#f8fafc] flex flex-col items-center justify-center p-6 font-sans text-slate-900">
