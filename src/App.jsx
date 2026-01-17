@@ -9,12 +9,16 @@ export default function App() {
   const handleUpload = async () => {
     if (!file) return;
     setUploading(true);
+    setUrl(''); // Clear old link
+
     try {
+      // The options here MUST match the permissions in the API above
       const newBlob = await upload(file.name, file, {
         access: 'public',
         handleUploadUrl: '/api/upload',
-        addRandomSuffix: true, // This requires server-side permission
+        addRandomSuffix: true, 
       });
+
       setUrl(newBlob.url);
       alert("Upload Successful!");
     } catch (error) {
@@ -25,29 +29,26 @@ export default function App() {
   };
 
   return (
-    <div style={styles.container}>
-      <div style={styles.card}>
-        <h1 style={styles.title}>TIINY CLONE</h1>
-        <div style={styles.box}>
-          <input type="file" onChange={(e) => setFile(e.target.files[0])} style={styles.input} id="f" />
-          <label htmlFor="f" style={styles.label}>{file ? file.name : "Select File"}</label>
-        </div>
-        <button onClick={handleUpload} disabled={uploading || !file} style={styles.btn}>
-          {uploading ? "Uploading..." : "Deploy Now"}
-        </button>
-        {url && <div style={styles.res}><a href={url} target="_blank">View Site →</a><p style={{fontSize:'10px'}}>{url}</p></div>}
+    <div style={{ padding: '20px', textAlign: 'center', fontFamily: 'sans-serif' }}>
+      <h1 style={{ color: '#6c5ce7' }}>TIINY CLONE</h1>
+      <div style={{ border: '2px dashed #ccc', padding: '20px', margin: '20px auto', maxWidth: '300px' }}>
+        <input type="file" onChange={(e) => setFile(e.target.files[0])} />
+        {file && <p>Selected: {file.name}</p>}
       </div>
+      <button 
+        onClick={handleUpload} 
+        disabled={uploading || !file}
+        style={{ padding: '10px 20px', background: '#6c5ce7', color: '#fff', border: 'none', borderRadius: '5px' }}
+      >
+        {uploading ? "Uploading..." : "Deploy Now"}
+      </button>
+
+      {url && (
+        <div style={{ marginTop: '20px', background: '#f0f0f0', padding: '10px' }}>
+          <p>✅ Success! Link:</p>
+          <a href={url} target="_blank" rel="noreferrer" style={{ wordBreak: 'break-all' }}>{url}</a>
+        </div>
+      )}
     </div>
   );
 }
-
-const styles = {
-  container: { display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', background: '#f4f7f6', fontFamily: 'sans-serif' },
-  card: { background: 'white', padding: '30px', borderRadius: '15px', boxShadow: '0 8px 20px rgba(0,0,0,0.1)', textAlign: 'center', width: '90%', maxWidth: '400px' },
-  title: { color: '#6c5ce7', marginBottom: '20px' },
-  box: { border: '2px dashed #ddd', padding: '20px', marginBottom: '20px', borderRadius: '10px', position: 'relative' },
-  input: { position: 'absolute', opacity: 0, width: '100%', height: '100%', top: 0, left: 0, cursor: 'pointer' },
-  label: { color: '#666' },
-  btn: { width: '100%', padding: '12px', background: '#6c5ce7', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 'bold' },
-  res: { marginTop: '20px', padding: '10px', background: '#eef', borderRadius: '8px' }
-};
