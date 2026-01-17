@@ -11,24 +11,28 @@ function App() {
   };
 
   const handleUpload = async () => {
-    if (!file) return;
-    setUploading(true);
+  if (!file) return;
+  setUploading(true);
 
-    try {
-      const newBlob = await upload(file.name, file, {
-        access: 'public',
-        handleUploadUrl: '/api/upload',
-        addRandomSuffix: true, // Fix: Ensures unique URLs for every upload
-        contentType: file.type || 'text/html', // Fix: Forces browser to view, not download
-      });
+  // Use the custom name from your input, otherwise use the original filename
+  const fileNameToUse = customName ? `${customName}.html` : file.name;
 
-      setDownloadUrl(newBlob.url);
-    } catch (error) {
-      alert("Upload failed: " + error.message);
-    } finally {
-      setUploading(false);
-    }
-  };
+  try {
+    const newBlob = await upload(fileNameToUse, file, {
+      access: 'public',
+      handleUploadUrl: '/api/upload',
+      addRandomSuffix: true, // Now authorized by the API
+    });
+
+    setDownloadUrl(newBlob.url);
+    alert("Upload Successful!");
+  } catch (error) {
+    alert("Upload failed: " + error.message);
+  } finally {
+    setUploading(false);
+  }
+};
+
 
   const copyToClipboard = () => {
     navigator.clipboard.writeText(downloadUrl);
