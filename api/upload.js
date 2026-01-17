@@ -7,10 +7,9 @@ export default async function handler(request, response) {
       request,
       onBeforeGenerateToken: async (pathname) => {
         return {
-          allowedContentTypes: ['image/jpeg', 'image/png', 'application/zip', 'text/html'],
+          allowedContentTypes: ['text/html', 'image/jpeg', 'image/png', 'application/zip'],
           tokenPayload: JSON.stringify({
-            // This grants the permission that was causing your error
-            addRandomSuffix: true, 
+            addRandomSuffix: true,
           }),
         };
       },
