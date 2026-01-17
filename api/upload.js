@@ -6,14 +6,11 @@ export default async function handler(request, response) {
       body: request.body,
       request,
       onBeforeGenerateToken: async (pathname) => {
-        // Automatically set the content type so it opens in the browser
-        const contentType = pathname.endsWith('.html') ? 'text/html' : 'application/octet-stream';
-        
         return {
           allowedContentTypes: ['text/html', 'image/jpeg', 'image/png', 'application/zip'],
           tokenPayload: JSON.stringify({
-            addRandomSuffix: true,
-            contentType: contentType, // This tells the browser "Display this!"
+            // THIS LINE FIXES THE ERROR IN YOUR SCREENSHOT
+            addRandomSuffix: true, 
           }),
         };
       },
