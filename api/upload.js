@@ -7,10 +7,9 @@ export default async function handler(request, response) {
       request,
       onBeforeGenerateToken: async () => ({
         allowedContentTypes: ['image/jpeg', 'image/png', 'application/zip', 'text/html'],
-        // This object tells Vercel it's okay for the client to use these options
+        // This is the missing piece that "unlocks" unique URLs
         tokenPayload: JSON.stringify({
           addRandomSuffix: true,
-          contentType: 'text/html'
         }),
       }),
     });
