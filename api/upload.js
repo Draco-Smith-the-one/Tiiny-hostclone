@@ -7,9 +7,10 @@ export default async function handler(request, response) {
       request,
       onBeforeGenerateToken: async () => ({
         allowedContentTypes: ['image/jpeg', 'image/png', 'application/zip', 'text/html'],
-        // This is the missing piece that "unlocks" unique URLs
+        // This MUST match the settings in your App.jsx
         tokenPayload: JSON.stringify({
           addRandomSuffix: true,
+          contentType: 'text/html'
         }),
       }),
     });

@@ -6,54 +6,41 @@ function App() {
   const [uploading, setUploading] = useState(false);
   const [downloadUrl, setDownloadUrl] = useState('');
 
-  const handleFileChange = (e) => {
-    setFile(e.target.files[0]);
-  };
-
   const handleUpload = async () => {
-  if (!file) return;
-  setUploading(true);
+    if (!file) return;
+    setUploading(true);
+    setDownloadUrl('');
 
-  // Use the custom name from your input, otherwise use the original filename
-  const fileNameToUse = customName ? `${customName}.html` : file.name;
+    try {
+      const newBlob = await upload(file.name, file, {
+        access: 'public',
+        handleUploadUrl: '/api/upload',
+        addRandomSuffix: true, // authorized by the server-side token
+      });
 
-  try {
-    const newBlob = await upload(fileNameToUse, file, {
-      access: 'public',
-      handleUploadUrl: '/api/upload',
-      addRandomSuffix: true, // Now authorized by the API
-    });
-
-    setDownloadUrl(newBlob.url);
-    alert("Upload Successful!");
-  } catch (error) {
-    alert("Upload failed: " + error.message);
-  } finally {
-    setUploading(false);
-  }
-};
-
-
-  const copyToClipboard = () => {
-    navigator.clipboard.writeText(downloadUrl);
-    alert("Link copied to clipboard!");
+      setDownloadUrl(newBlob.url);
+      alert("Upload Successful!");
+    } catch (error) {
+      alert("Upload failed: " + error.message);
+    } finally {
+      setUploading(false);
+    }
   };
 
   return (
     <div style={styles.container}>
       <div style={styles.card}>
         <h1 style={styles.title}>TIINY CLONE</h1>
-        <p style={styles.subtitle}>The simplest way to host your {file?.name || 'files'}</p>
+        <p style={styles.subtitle}>Upload and host instantly</p>
         
         <div style={styles.dropzone}>
           <input 
             type="file" 
-            onChange={handleFileChange} 
+            onChange={(e) => setFile(e.target.files[0])} 
             style={styles.fileInput} 
-            id="file-upload"
           />
-          <label htmlFor="file-upload" style={styles.label}>
-            {file ? `Selected: ${file.name}` : 'Click to select .html or .zip'}
+          <label style={styles.label}>
+            {file ? `Selected: ${file.name}` : 'Tap to select file'}
           </label>
         </div>
 
@@ -62,19 +49,16 @@ function App() {
           disabled={uploading || !file}
           style={{...styles.button, backgroundColor: uploading ? '#a29bfe' : '#6c5ce7'}}
         >
-          {uploading ? 'Uploading...' : 'Deploy Now'}
+          {uploading ? 'Processing...' : 'Deploy Now'}
         </button>
 
         {downloadUrl && (
           <div style={styles.resultCard}>
             <p style={styles.successText}>🚀 Your site is live!</p>
-            <div style={styles.linkRow}>
-              <input readOnly value={downloadUrl} style={styles.linkInput} />
-              <button onClick={copyToClipboard} style={styles.copyButton}>Copy</button>
-            </div>
             <a href={downloadUrl} target="_blank" rel="noreferrer" style={styles.visitLink}>
-              Visit Website →
+              View Website →
             </a>
+            <p style={styles.urlText}>{downloadUrl}</p>
           </div>
         )}
       </div>
@@ -83,34 +67,18 @@ function App() {
 }
 
 const styles = {
-  container: {
-    display: 'flex', justifyContent: 'center', alignItems: 'center', 
-    minHeight: '100vh', backgroundColor: '#f0f2f5', fontFamily: 'sans-serif', padding: '20px'
-  },
-  card: {
-    backgroundColor: 'white', padding: '40px', borderRadius: '16px',
-    boxShadow: '0 10px 25px rgba(0,0,0,0.1)', maxWidth: '400px', width: '100%', textAlign: 'center'
-  },
-  title: { color: '#6c5ce7', fontSize: '28px', marginBottom: '8px', fontWeight: 'bold' },
+  container: { display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', backgroundColor: '#f0f2f5', fontFamily: 'sans-serif', padding: '20px' },
+  card: { backgroundColor: 'white', padding: '40px', borderRadius: '16px', boxShadow: '0 10px 25px rgba(0,0,0,0.1)', maxWidth: '400px', width: '100%', textAlign: 'center' },
+  title: { color: '#6c5ce7', fontSize: '28px', marginBottom: '8px' },
   subtitle: { color: '#636e72', marginBottom: '30px' },
-  dropzone: {
-    border: '2px dashed #dfe6e9', borderRadius: '12px', padding: '30px',
-    marginBottom: '20px', position: 'relative', cursor: 'pointer'
-  },
+  dropzone: { border: '2px dashed #dfe6e9', borderRadius: '12px', padding: '30px', marginBottom: '20px', position: 'relative' },
   fileInput: { position: 'absolute', opacity: 0, width: '100%', height: '100%', top: 0, left: 0, cursor: 'pointer' },
   label: { color: '#2d3436', fontSize: '14px' },
-  button: {
-    width: '100%', padding: '14px', color: 'white', border: 'none',
-    borderRadius: '8px', fontSize: '16px', fontWeight: 'bold', cursor: 'pointer', transition: '0.3s'
-  },
-  resultCard: {
-    marginTop: '30px', padding: '15px', backgroundColor: '#f8f9fa', borderRadius: '12px', textAlign: 'left'
-  },
-  successText: { color: '#00b894', fontWeight: 'bold', marginBottom: '10px', fontSize: '14px' },
-  linkRow: { display: 'flex', gap: '5px', marginBottom: '10px' },
-  linkInput: { flex: 1, padding: '8px', border: '1px solid #ddd', borderRadius: '4px', fontSize: '12px' },
-  copyButton: { padding: '8px 12px', backgroundColor: '#2d3436', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' },
-  visitLink: { display: 'block', textAlign: 'center', color: '#6c5ce7', textDecoration: 'none', fontWeight: 'bold', fontSize: '14px' }
+  button: { width: '100%', padding: '14px', color: 'white', border: 'none', borderRadius: '8px', fontSize: '16px', fontWeight: 'bold', cursor: 'pointer' },
+  resultCard: { marginTop: '30px', padding: '15px', backgroundColor: '#f8f9fa', borderRadius: '12px' },
+  successText: { color: '#00b894', fontWeight: 'bold', marginBottom: '10px' },
+  visitLink: { display: 'block', color: '#6c5ce7', textDecoration: 'none', fontWeight: 'bold', marginBottom: '10px' },
+  urlText: { fontSize: '10px', color: '#b2bec3', wordBreak: 'break-all' }
 };
 
 export default App;
