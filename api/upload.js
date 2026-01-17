@@ -6,11 +6,14 @@ export default async function handler(request, response) {
       body: request.body,
       request,
       onBeforeGenerateToken: async (pathname) => {
+        // Automatically set the content type so it opens in the browser
+        const contentType = pathname.endsWith('.html') ? 'text/html' : 'application/octet-stream';
+        
         return {
-          allowedContentTypes: ['image/jpeg', 'image/png', 'application/zip', 'text/html'],
+          allowedContentTypes: ['text/html', 'image/jpeg', 'image/png', 'application/zip'],
           tokenPayload: JSON.stringify({
-            // This grants the permission that was causing your error
-            addRandomSuffix: true, 
+            addRandomSuffix: true,
+            contentType: contentType, // This tells the browser "Display this!"
           }),
         };
       },
